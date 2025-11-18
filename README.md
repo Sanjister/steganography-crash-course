@@ -1,3 +1,7 @@
+Demo accessible at: https://sanjister.github.io/steganography-crash-course/
+
+## Cybersecurity, Confidentiality and Encryption
+
 Confidentiality is one of the vital pillars of cybersecurity, it ensures that data is only available to authorized users.
 
 To prevent confidential data from being read by third parties, we use encryption to scramble data in ways that only authorised parties with their unique secret keys can decode.\
@@ -10,7 +14,6 @@ Example:
 - Tom sends this encrypted output to Jerry
 - Jerry passes the received data through a decryption function using his key, which translates it back to `Hello!`
 - TL;DR: `Hello! 🔑🔒 → ❔ → 🔑🔓 Hello!`
-
 
 ## Steganography
 
