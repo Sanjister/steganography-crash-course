@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Steganography Demo</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f5f7fa;
+      margin: 0;
+      padding: 40px;
+      display: flex;
+      justify-content: center;
+    }
+    .container {
+      background: white;
+      padding: 32px;
+      max-width: 700px;
+      width: 100%;
+      border-radius: 16px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    }
+    h1 {
+      margin-top: 0;
+      text-align: center;
+    }
+    input, textarea, button {
+      width: 100%;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      margin-top: 8px;
+      font-size: 1rem;
+    }
+    button {
+      background: #4a6cf7;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin: auto;
+      margin-top: 16px;
+    }
+    button:hover {
+      background: #3b57c9;
+    }
+    canvas {
+      display: none;
+    }
+    hr.solid {
+      border-top: 1px solid #f7f7f7;
+      margin-top: 20px;
+      margin-bottom: 20px;
+    }
+    .output-img {     
+      display: block;
+      margin: auto;
+      margin-top: 20px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      max-height: 320px;
+    }
+    /* hide the encoded output until we have an image to show */
+    img#output { display: none; }
+    #output.visible { display: block; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Steganography Demo</h1>
+
+    <h3>Base image</h3>
+    <img id="basePreview" class="output-img" alt="Base preview" />
+    <label for="imgInput" style="font-size:0.9rem; opacity:0.7; margin-top:0;">Or upload custom base image:</label>
+    <input type="file" id="imgInput" accept="image/*" />
+
+    <hr class="solid">
+
+    <h3>Encrypt message into image</h3>
+    <textarea id="message" rows="4" placeholder="Enter a secret message..."></textarea>
+
+    <button id="encodeBtn">Encrypt</button>
+
+    <h3></h3>
+    <p id="outputPlaceholder" style="font-size:0.9rem; opacity:0.7; margin-top:0; margin-bottom:0;">Image with encrypted message will appear here.</p>
+    <img id="output" class="output-img" />
+
+    <hr class="solid">
+
+    <h3>Decrypt message from image</h3>
+    <input type="file" id="decodeInput" accept="image/*" />
+
+    <button id="decodeBtn">Decrypt</button>
+    <textarea id="decodedMessage" rows="4" placeholder="Decoded message will appear here..."></textarea>
+
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <script>
+    const baseInput = document.getElementById('imgInput');
+    const basePreview = document.getElementById('basePreview');
+    const outputPlaceholder = document.getElementById('outputPlaceholder');
+    const decodeInput = document.getElementById('decodeInput');
+    const encodeBtn = document.getElementById('encodeBtn');
+    const decodeBtn = document.getElementById('decodeBtn');
+    const output = document.getElementById('output');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // Preview the selected base image (or default)
+    let basePreviewUrl = null;
+    baseInput.addEventListener('change', () => {
+      if (basePreviewUrl) URL.revokeObjectURL(basePreviewUrl);
+      const file = baseInput.files[0];
+      if (!file) {
+        basePreview.src = 'base.png';
+        basePreviewUrl = null;
+      } else {
+        basePreviewUrl = URL.createObjectURL(file);
+        basePreview.src = basePreviewUrl;
+      }
+      // hide any previous encoded output when the base changes
+      try {
+        output.src = '';
+        output.classList.remove('visible');
+      } catch (e) {}
+      if (outputPlaceholder) outputPlaceholder.style.display = 'block';
+    });
+
+    // Show default preview on load
+    basePreview.crossOrigin = 'anonymous';
+    basePreview.src = 'base.png';
+    basePreview.onerror = () => {
+      basePreview.src = createPlaceholderDataUrl(400, 240);
+    };
+
+    function createPlaceholderDataUrl(w = 640, h = 360) {
+      const tmp = document.createElement('canvas');
+      tmp.width = w;
+      tmp.height = h;
+      const tctx = tmp.getContext('2d');
+      tctx.fillStyle = '#f0f0f0';
+      tctx.fillRect(0, 0, w, h);
+      tctx.fillStyle = '#999';
+      tctx.font = '18px system-ui, sans-serif';
+      tctx.fillText('No image available', 12, 30);
+      return tmp.toDataURL();
+    }
+
+    // Encode a byte across two pixels without touching alpha:
+    // pixel1: R stores bits 7-6, G bits 5-4, B bits 3-2
+    // pixel2: R stores bits 1-0
+    function encodeByteAcrossPixels(data, index, byte) {
+      // index is the start of pixel1 (multiple of 4)
+      if (index + 4 >= data.length) return; // not enough space
+
+      // pixel1 channels
+      data[index]     = (data[index] & 0xFC) | ((byte >> 6) & 0x03);
+      data[index + 1] = (data[index + 1] & 0xFC) | ((byte >> 4) & 0x03);
+      data[index + 2] = (data[index + 2] & 0xFC) | ((byte >> 2) & 0x03);
+      // pixel2 R channel (store lowest 2 bits)
+      data[index + 4] = (data[index + 4] & 0xFC) | (byte & 0x03);
+    }
+
+    function decodeByteAcrossPixels(data, index) {
+      if (index + 4 >= data.length) return 0;
+      const r1 = data[index] & 0x03;
+      const g1 = data[index + 1] & 0x03;
+      const b1 = data[index + 2] & 0x03;
+      const r2 = data[index + 4] & 0x03;
+      return (r1 << 6) | (g1 << 4) | (b1 << 2) | r2;
+    }
+
+    encodeBtn.onclick = async () => {
+      console.log('Encode clicked');
+      let file = baseInput.files[0];
+      const img = new Image();
+      let blobUrl;
+
+      function doEncodeWithImage(imgWidth, imgHeight) {
+        canvas.width = imgWidth;
+        canvas.height = imgHeight;
+        if (imgWidth > 0 && imgHeight > 0) ctx.drawImage(img, 0, 0, imgWidth, imgHeight);
+
+        const message = document.getElementById('message').value + '';
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        // Capacity: each byte consumes two pixels (8 data bytes)
+        const totalBytes = data.data.length;
+        const capacity = Math.floor(totalBytes / 8) - 4; // reserve 4 bytes for length header
+        if (capacity <= 0) {
+          alert('Image too small to hide any message');
+          return;
+        }
+
+        let writeLen = message.length;
+        if (writeLen > capacity) {
+          const ok = confirm(`Message too long for this image (max ${capacity} bytes). Truncate to fit?`);
+          if (!ok) return;
+          writeLen = capacity;
+        }
+
+        // Write 4-byte little-endian length header at the start
+        const headerBytes = 4;
+        for (let h = 0; h < headerBytes; h++) {
+          const b = (writeLen >> (h * 8)) & 0xFF;
+          encodeByteAcrossPixels(data.data, h * 8, b);
+        }
+
+        // Write message bytes after header
+        let msgIndex = 0;
+        for (let i = headerBytes * 8; i + 4 < data.data.length && msgIndex < writeLen; i += 8) {
+          encodeByteAcrossPixels(data.data, i, message.charCodeAt(msgIndex));
+          msgIndex++;
+        }
+
+        ctx.putImageData(data, 0, 0);
+        output.src = canvas.toDataURL();
+        output.classList.add('visible');
+        if (outputPlaceholder) outputPlaceholder.style.display = 'none';
+
+        if (blobUrl) {
+          URL.revokeObjectURL(blobUrl);
+          blobUrl = null;
+        }
+      }
+
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          doEncodeWithImage(img.width, img.height);
+        } catch (err) {
+          console.error('Error while encoding onload:', err);
+          if (err && err.name === 'SecurityError' || err && err.message && err.message.toLowerCase().includes('insecure')) {
+            alert('Canvas operation blocked: the image has tainted the canvas (cross-origin).\n\nFixes:\n- Serve this page and images over HTTP(S) from the same origin (run a local server)\n- Or use images from the file input (local upload) rather than remote URLs\n- If using remote images, ensure the server sets CORS header: Access-Control-Allow-Origin: *');
+          }
+        }
+      };
+
+      img.onerror = () => {
+        console.warn('Image failed to load for encoding, using placeholder canvas');
+        // Use a default placeholder size
+        const w = 640, h = 360;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        doEncodeWithImage(w, h);
+        if (blobUrl) {
+          URL.revokeObjectURL(blobUrl);
+          blobUrl = null;
+        }
+      };
+
+      // If user didn't upload an image, use default
+      if (!file) {
+        img.src = 'base.png';
+      } else {
+        blobUrl = URL.createObjectURL(file);
+        img.src = blobUrl;
+      }
+    };
+
+    decodeBtn.onclick = () => {
+      console.log('Decode clicked');
+      const file = decodeInput.files[0];
+      if (!file) return alert('Upload an encoded image');
+
+      const img = new Image();
+      const blobUrl = URL.createObjectURL(file);
+
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        try {
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+
+          const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          let chars = [];
+
+          // Read 4-byte little-endian length header first
+          const headerBytes = 4;
+          let msgLen = 0;
+          for (let h = 0; h < headerBytes; h++) {
+            const b = decodeByteAcrossPixels(data.data, h * 8);
+            msgLen |= (b & 0xFF) << (h * 8);
+          }
+
+          // Sanity clamp to available capacity
+          const totalBytes = data.data.length;
+          const capacity = Math.floor(totalBytes / 8) - headerBytes;
+          if (msgLen > capacity) msgLen = capacity;
+
+          for (let i = headerBytes * 8, read = 0; i + 4 < data.data.length && read < msgLen; i += 8, read++) {
+            const byte = decodeByteAcrossPixels(data.data, i);
+            chars.push(String.fromCharCode(byte));
+          }
+
+          document.getElementById('decodedMessage').value = chars.join('');
+          URL.revokeObjectURL(blobUrl);
+        } catch (err) {
+          console.error('Error while decoding onload:', err);
+          alert('Canvas operation blocked while decoding. This is usually caused by a cross-origin image tainting the canvas. Serve the page/images from the same origin or use a local server.');
+          URL.revokeObjectURL(blobUrl);
+        }
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(blobUrl);
+        alert('Failed to load the image for decoding. Is it a valid image file?');
+      };
+
+      img.src = blobUrl;
+    };
+  </script>
+</body>
+</html>
