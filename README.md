@@ -1,5 +1,3 @@
-Demo accessible at: https://sanjister.github.io/steganography-crash-course/
-
 ## Cybersecurity, Confidentiality and Encryption
 
 Confidentiality is one of the vital pillars of cybersecurity, it ensures that data is only available to authorized users.
@@ -34,6 +32,24 @@ We will be using **PNGs** that store **RGBA** pixels in 32-bit sequences (8 bits
 | 0 | 1 | 1 |
 | 1 | 0 | 1 |
 | 1 | 1 | 0 |
+
+## Demo
+
+Accessible at: https://sanjister.github.io/steganography-crash-course/
+
+### How to use
+
+#### To encrypt:
+1. Set base image (a default image is provided but you can upload your own if wanted).
+2. Under "Encrypt message into image" enter your secret message to be encrypted.
+3. Click on "Encrypt".
+4. Save the new image which contains the secret message.
+5. Share the image inconspicuously. 🥸
+
+#### To decrypt:
+1. Set the base image used to encrypt the message (leave as is if the default image was used).
+2. Under "Decrypt message from image" select the image with a secret message you want to decrypt.
+3. Click on "Decrypt".
 
 ### Algorithm breakdown
 
