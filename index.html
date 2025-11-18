@@ -120,15 +120,11 @@
         basePreviewUrl = URL.createObjectURL(file);
         basePreview.src = basePreviewUrl;
       }
-      // hide any previous encoded output when the base changes
-      try {
-        output.src = '';
-        output.classList.remove('visible');
-      } catch (e) {}
+      output.src = '';
+      output.classList.remove('visible');
       if (outputPlaceholder) outputPlaceholder.style.display = 'block';
     });
 
-    // Show default preview on load
     basePreview.crossOrigin = 'anonymous';
     basePreview.src = 'base.png';
     basePreview.onerror = () => {
@@ -148,28 +144,27 @@
       return tmp.toDataURL();
     }
 
-    // Encode a byte across two pixels without touching alpha:
-    // pixel1: R stores bits 7-6, G bits 5-4, B bits 3-2
-    // pixel2: R stores bits 1-0
-    function encodeByteAcrossPixels(data, index, byte) {
-      // index is the start of pixel1 (multiple of 4)
-      if (index + 4 >= data.length) return; // not enough space
+    function encodeByteAcrossPixelsDiff(stego, base, index, byte) {
+      if (index + 4 >= stego.length) return;
 
-      // pixel1 channels
-      data[index]     = (data[index] & 0xFC) | ((byte >> 6) & 0x03);
-      data[index + 1] = (data[index + 1] & 0xFC) | ((byte >> 4) & 0x03);
-      data[index + 2] = (data[index + 2] & 0xFC) | ((byte >> 2) & 0x03);
-      // pixel2 R channel (store lowest 2 bits)
-      data[index + 4] = (data[index + 4] & 0xFC) | (byte & 0x03);
+      // Pixel 1 (top 6 bits)
+      stego[index]     = base[index]     ^ ((byte >> 6) & 0x03); // R
+      stego[index + 1] = base[index + 1] ^ ((byte >> 4) & 0x03); // G
+      stego[index + 2] = base[index + 2] ^ ((byte >> 2) & 0x03); // B
+
+      // Pixel 2 (lowest 2 bits)
+      stego[index + 4] = base[index + 4] ^ (byte & 0x03); // R only
     }
 
-    function decodeByteAcrossPixels(data, index) {
-      if (index + 4 >= data.length) return 0;
-      const r1 = data[index] & 0x03;
-      const g1 = data[index + 1] & 0x03;
-      const b1 = data[index + 2] & 0x03;
-      const r2 = data[index + 4] & 0x03;
-      return (r1 << 6) | (g1 << 4) | (b1 << 2) | r2;
+    function decodeByteAcrossPixelsDiff(stego, base, index) {
+      if (index + 4 >= stego.length) return 0;
+
+      const r = (stego[index]     ^ base[index])     & 0x03;
+      const g = (stego[index + 1] ^ base[index + 1]) & 0x03;
+      const b = (stego[index + 2] ^ base[index + 2]) & 0x03;
+      const r2= (stego[index + 4] ^ base[index + 4]) & 0x03;
+
+      return (r << 6) | (g << 4) | (b << 2) | r2;
     }
 
     encodeBtn.onclick = async () => {
@@ -181,14 +176,20 @@
       function doEncodeWithImage(imgWidth, imgHeight) {
         canvas.width = imgWidth;
         canvas.height = imgHeight;
-        if (imgWidth > 0 && imgHeight > 0) ctx.drawImage(img, 0, 0, imgWidth, imgHeight);
+
+        ctx.drawImage(img, 0, 0, imgWidth, imgHeight);
+
+        const baseData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const stegoData = new ImageData(
+          new Uint8ClampedArray(baseData.data),
+          baseData.width,
+          baseData.height
+        );
 
         const message = document.getElementById('message').value + '';
-        const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-        // Capacity: each byte consumes two pixels (8 data bytes)
-        const totalBytes = data.data.length;
-        const capacity = Math.floor(totalBytes / 8) - 4; // reserve 4 bytes for length header
+        const totalBytes = stegoData.data.length;
+        const capacity = Math.floor(totalBytes / 8) - 4;
         if (capacity <= 0) {
           alert('Image too small to hide any message');
           return;
@@ -196,65 +197,52 @@
 
         let writeLen = message.length;
         if (writeLen > capacity) {
-          const ok = confirm(`Message too long for this image (max ${capacity} bytes). Truncate to fit?`);
+          const ok = confirm(`Message too long (max ${capacity}). Truncate?`);
           if (!ok) return;
           writeLen = capacity;
         }
 
-        // Write 4-byte little-endian length header at the start
-        const headerBytes = 4;
-        for (let h = 0; h < headerBytes; h++) {
+        // Encode 4-byte little endian length header
+        for (let h = 0; h < 4; h++) {
           const b = (writeLen >> (h * 8)) & 0xFF;
-          encodeByteAcrossPixels(data.data, h * 8, b);
+          encodeByteAcrossPixelsDiff(stegoData.data, baseData.data, h * 8, b);
         }
 
-        // Write message bytes after header
+        // Encode message
         let msgIndex = 0;
-        for (let i = headerBytes * 8; i + 4 < data.data.length && msgIndex < writeLen; i += 8) {
-          encodeByteAcrossPixels(data.data, i, message.charCodeAt(msgIndex));
+        for (let i = 32; i + 4 < stegoData.data.length && msgIndex < writeLen; i += 8) {
+          encodeByteAcrossPixelsDiff(
+            stegoData.data,
+            baseData.data,
+            i,
+            message.charCodeAt(msgIndex)
+          );
           msgIndex++;
         }
 
-        ctx.putImageData(data, 0, 0);
+        ctx.putImageData(stegoData, 0, 0);
         output.src = canvas.toDataURL();
         output.classList.add('visible');
         if (outputPlaceholder) outputPlaceholder.style.display = 'none';
-
-        if (blobUrl) {
-          URL.revokeObjectURL(blobUrl);
-          blobUrl = null;
-        }
       }
 
       img.crossOrigin = 'anonymous';
+
       img.onload = () => {
         try {
           doEncodeWithImage(img.width, img.height);
-        } catch (err) {
-          console.error('Error while encoding onload:', err);
-          if (err && err.name === 'SecurityError' || err && err.message && err.message.toLowerCase().includes('insecure')) {
-            alert('Canvas operation blocked: the image has tainted the canvas (cross-origin).\n\nFixes:\n- Serve this page and images over HTTP(S) from the same origin (run a local server)\n- Or use images from the file input (local upload) rather than remote URLs\n- If using remote images, ensure the server sets CORS header: Access-Control-Allow-Origin: *');
-          }
+        } catch (e) {
+          console.error(e);
+          alert("Encoding failed (CORS or canvas security issue).");
         }
       };
 
       img.onerror = () => {
-        console.warn('Image failed to load for encoding, using placeholder canvas');
-        // Use a default placeholder size
-        const w = 640, h = 360;
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, w, h);
-        doEncodeWithImage(w, h);
-        if (blobUrl) {
-          URL.revokeObjectURL(blobUrl);
-          blobUrl = null;
-        }
+        alert('Failed to load base image.');
       };
 
-      // If user didn't upload an image, use default
-      if (!file) {
-        img.src = 'base.png';
-      } else {
+      if (!file) img.src = "base.png";
+      else {
         blobUrl = URL.createObjectURL(file);
         img.src = blobUrl;
       }
@@ -262,55 +250,65 @@
 
     decodeBtn.onclick = () => {
       console.log('Decode clicked');
-      const file = decodeInput.files[0];
-      if (!file) return alert('Upload an encoded image');
 
-      const img = new Image();
-      const blobUrl = URL.createObjectURL(file);
+      const stegoFile = decodeInput.files[0];
+      if (!stegoFile) return alert("Upload the encoded (stego) image.");
 
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        try {
-          canvas.width = img.width;
-          canvas.height = img.height;
-          ctx.drawImage(img, 0, 0);
+      const stegoImg = new Image();
+      const stegoUrl = URL.createObjectURL(stegoFile);
 
-          const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          let chars = [];
+      const baseImg = new Image();
+      let baseUrl = null;
 
-          // Read 4-byte little-endian length header first
-          const headerBytes = 4;
-          let msgLen = 0;
-          for (let h = 0; h < headerBytes; h++) {
-            const b = decodeByteAcrossPixels(data.data, h * 8);
-            msgLen |= (b & 0xFF) << (h * 8);
+      if (baseInput.files[0]) {
+        baseUrl = URL.createObjectURL(baseInput.files[0]);
+        baseImg.src = baseUrl;
+      } else {
+        baseImg.src = "base.png";
+      }
+
+      baseImg.onload = () => {
+        stegoImg.onload = () => {
+          if (baseImg.width !== stegoImg.width ||
+              baseImg.height !== stegoImg.height) {
+            alert("Base image and stego image dimensions do not match.");
+            return;
           }
 
-          // Sanity clamp to available capacity
-          const totalBytes = data.data.length;
-          const capacity = Math.floor(totalBytes / 8) - headerBytes;
-          if (msgLen > capacity) msgLen = capacity;
+          canvas.width = stegoImg.width;
+          canvas.height = stegoImg.height;
 
-          for (let i = headerBytes * 8, read = 0; i + 4 < data.data.length && read < msgLen; i += 8, read++) {
-            const byte = decodeByteAcrossPixels(data.data, i);
+          // Extract base
+          ctx.drawImage(baseImg, 0, 0);
+          const baseData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+          // Extract stego
+          ctx.drawImage(stegoImg, 0, 0);
+          const stegoData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+          // Decode 4-byte length header
+          let msgLen = 0;
+          for (let h = 0; h < 4; h++) {
+            const b = decodeByteAcrossPixelsDiff(stegoData.data, baseData.data, h * 8);
+            msgLen |= b << (h * 8);
+          }
+
+          const chars = [];
+          for (let i = 32, read = 0; i + 4 < stegoData.data.length && read < msgLen; i += 8, read++) {
+            const byte = decodeByteAcrossPixelsDiff(stegoData.data, baseData.data, i);
             chars.push(String.fromCharCode(byte));
           }
 
-          document.getElementById('decodedMessage').value = chars.join('');
-          URL.revokeObjectURL(blobUrl);
-        } catch (err) {
-          console.error('Error while decoding onload:', err);
-          alert('Canvas operation blocked while decoding. This is usually caused by a cross-origin image tainting the canvas. Serve the page/images from the same origin or use a local server.');
-          URL.revokeObjectURL(blobUrl);
-        }
+          document.getElementById("decodedMessage").value = chars.join("");
+
+          URL.revokeObjectURL(stegoUrl);
+          if (baseUrl) URL.revokeObjectURL(baseUrl);
+        };
+
+        stegoImg.src = stegoUrl;
       };
 
-      img.onerror = () => {
-        URL.revokeObjectURL(blobUrl);
-        alert('Failed to load the image for decoding. Is it a valid image file?');
-      };
-
-      img.src = blobUrl;
+      baseImg.onerror = () => alert("Failed to load base image.");
     };
   </script>
 </body>
