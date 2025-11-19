@@ -20,7 +20,7 @@ Greek *steganos* (covered) + Latin *-graphy*.
 
 In this project we will be demonstrating **image differencing steganography**.
 
-Our "key" will be an image in which a message will be concealed by slightly altering the base pixel values. These changes should be unnoticeable to the human eye, therefore allowing secret messages to be exchanged discreetly under the form of banal images. All resulting images will also remain the same size as the original.
+Our "key" will be an image in which a message will be concealed by slightly altering the base pixel values. These changes should be unnoticeable to the human eye, therefore allowing secret messages to be exchanged discreetly under the form of banal images.
 
 ![](image_steganography_example.png)
 
