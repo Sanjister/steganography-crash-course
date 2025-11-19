@@ -61,9 +61,11 @@
       box-shadow: 0 2px 10px rgba(0,0,0,0.05);
       max-height: 320px;
     }
-    /* hide the encrypted output until we have an image to show */
+    /* hide the encrypted output and download button until we have an image to show */
     img#output { display: none; }
     #output.visible { display: block; }
+    #downloadBtn { display: none; }
+    #downloadBtn.visible { display: block; }
   </style>
 </head>
 <body>
@@ -85,6 +87,7 @@
     <h3></h3>
     <p id="outputPlaceholder" style="font-size:0.9rem; opacity:0.7; margin-top:0; margin-bottom:0;">Image with encrypted message will appear here.</p>
     <img id="output" class="output-img" />
+    <button id="downloadBtn">Save image</button>
 
     <hr class="solid">
 
@@ -103,6 +106,7 @@
     const outputPlaceholder = document.getElementById('outputPlaceholder');
     const decryptInput = document.getElementById('decryptInput');
     const encryptBtn = document.getElementById('encryptBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
     const decryptBtn = document.getElementById('decryptBtn');
     const output = document.getElementById('output');
     const canvas = document.getElementById('canvas');
@@ -223,6 +227,7 @@
         ctx.putImageData(stegoData, 0, 0);
         output.src = canvas.toDataURL();
         output.classList.add('visible');
+        downloadBtn.classList.add('visible');  
         if (outputPlaceholder) outputPlaceholder.style.display = 'none';
       }
 
@@ -246,6 +251,16 @@
         blobUrl = URL.createObjectURL(file);
         img.src = blobUrl;
       }
+    };
+
+    downloadBtn.onclick = () => {
+      if (!output.src) return alert("No image to save. Please encrypt a message first.");
+      const a = document.createElement('a');
+      a.href = output.src;
+      a.download = 'stego_image.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     };
 
     decryptBtn.onclick = () => {
