@@ -46,7 +46,7 @@ Accessible at: https://sanjister.github.io/steganography-crash-course/
 2. Under "Encrypt message into image" enter your secret message to be encrypted.
 3. Click on "Encrypt".
 4. Save the new image which contains the secret message.
-5. Share the image inconspicuously. 🥸
+5. Share the image inconspicuously 🥸 (except on Instagram...because it converts the image and breaks the secret message 🥲).
 
 #### To decrypt:
 1. Set the base image used to encrypt the message (leave as is if the default image was used).
